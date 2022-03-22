@@ -4,11 +4,12 @@
 /*
  * Class for addressing various light types
  */
-
 #include "const.h"
 #include "pin_manager.h"
 #include "bus_wrapper.h"
 #include <Arduino.h>
+#include <PCA9685.h>
+
 
 //colors.cpp
 uint32_t colorBalanceFromKelvin(uint16_t kelvin, uint32_t rgb);
@@ -325,7 +326,14 @@ class BusDigital : public Bus {
 
 class BusPwm : public Bus {
   public:
+  PCA9685 contr;
   BusPwm(BusConfig &bc) : Bus(bc.type, bc.start) {
+  
+    Wire.begin(2,4);
+    contr.setupSingleDevice(Wire, 0x40, true);
+    contr.setToFrequency(1000);
+
+    //hard_sweep2();
     _valid = false;
     if (!IS_PWM(bc.type)) return;
     uint8_t numPins = NUM_PWM_PINS(bc.type);
@@ -356,6 +364,22 @@ class BusPwm : public Bus {
     reversed = bc.reversed;
     _valid = true;
   };
+
+  void hard_sweep2() {
+    uint16_t prev_pulse_width;
+    uint16_t phase; 
+    int ch[] = {0,14,2,3,4,5,8,9,10,11,12,13};
+    while(true)
+    {
+      Serial.println("hard_sweep 2");
+      for (int i=0;i<12;i++) {
+        Serial.println("hard_sweep 3");
+        contr.PCA9685::setChannelPulseWidth(ch[i], 255, i*(4095/12));
+        delay(250);
+        contr.PCA9685::setChannelPulseWidth(ch[i], 0, i*(4095/12));
+      }
+    }   
+  }
 
   void setPixelColor(uint16_t pix, uint32_t c) {
     if (pix != 0 || !_valid) return; //only react to first pixel
@@ -419,16 +443,23 @@ class BusPwm : public Bus {
 
   void show() {
     if (!_valid) return;
-    uint8_t numPins = NUM_PWM_PINS(_type);
-    for (uint8_t i = 0; i < numPins; i++) {
-      uint8_t scaled = (_data[i] * _bri) / 255;
-      if (reversed) scaled = 255 - scaled;
-      #ifdef ESP8266
-      analogWrite(_pins[i], scaled);
-      #else
-      ledcWrite(_ledcStart + i, scaled);
-      #endif
+    
+    uint8_t scaled = (_data[0] * _bri) / 255;
+    int ch[] = {0,14,2,3,4,5,8,9,10,11,12,13};
+    for (int i=0;i<12;i++) {
+        contr.PCA9685::setChannelPulseWidth(ch[i], scaled * 16, i*(4095/12));
     }
+
+    // uint8_t numPins = NUM_PWM_PINS(_type);
+    // for (uint8_t i = 0; i < numPins; i++) {
+    //   uint8_t scaled = (_data[i] * _bri) / 255;
+    //   if (reversed) scaled = 255 - scaled;
+    //    #ifdef ESP8266
+    //   analogWrite(_pins[i], scaled);
+    //    #else
+    //   ledcWrite(_ledcStart + i, scaled);
+    //   #endif
+    // }
   }
 
   inline void setBrightness(uint8_t b) {
